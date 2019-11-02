@@ -4,6 +4,7 @@ using System.Linq;
 using BranchAndChicken.Api.Models;
 using Microsoft.AspNetCore.Mvc;
 using System.Data.SqlClient;
+using Dapper;
 
 namespace BranchAndChicken.Api.DataAccess
 {
@@ -13,55 +14,41 @@ namespace BranchAndChicken.Api.DataAccess
 
         public List<Trainer> GetAll()
         {
-            using (var connection = new SqlConnection(_connectionString))
+            using (var db = new SqlConnection(_connectionString))
             {
-                connection.Open();
+                db.Open();
+                var trainers = db.Query<Trainer>("Select * From Trainer");
 
-                var cmd = connection.CreateCommand();
-                cmd.CommandText = @"Select * 
-                                From Trainer";
-
-                var dataReader = cmd.ExecuteReader();
-
-                var trainers = new List<Trainer>();
-
-                while (dataReader.Read())
-                {
-                    //explicit cast
-                    var id = (int) dataReader["Id"];
-                    //implicit cast
-                    var name = dataReader["name"] as string;
-                    //convert to
-                    var yearsOfExperience = Convert.ToInt32(dataReader["YearsOfExperience"]);
-                    //try parse
-                    Enum.TryParse<Specialty>(dataReader["speciality"].ToString(), out var speciality);
-
-                    var trainer = new Trainer
-                    {
-                        Specialty = speciality,
-                        Id = id,
-                        Name = name,
-                        YearsOfExperience = yearsOfExperience
-                    };
-
-                    trainers.Add(trainer);
-                }
-                return trainers;
+                return trainers.AsList();
             }
         }
 
         public Trainer Get(string name)
         {
-            //var trainer = _trainers.First(t => t.Name == name);
-            //return trainer;
-            return new Trainer();
+            using (var db = new SqlConnection(_connectionString))
+            {
+                var sql = @"select *
+                            from Trainer
+                            where Trainer.Name = @trainerName";
+
+                var trainer = db.QueryFirst<Trainer>(sql, new {trainerName = name});
+                return trainer;
+
+            }
+
         }
 
-        public void Remove(string name)
+        public bool Remove(string name)
         {
-            //var trainer = Get(name);
+            using (var db = new SqlConnection(_connectionString))
+            {
+                var sql = @"delete 
+                            from trainer 
+                            where [name] = @name";
 
-            //_trainers.Remove(trainer);
+                return db.Execute(sql, new {name}) == 1;
+
+            }
 
         }
 
@@ -72,18 +59,88 @@ namespace BranchAndChicken.Api.DataAccess
 
         public Trainer Update(Trainer updatedTrainer, int id)
         {
-            //var trainerToUpdate = _trainers.First(trainer => trainer.Id == id);
-            //trainerToUpdate.Name = updatedTrainer.Name;
-            //trainerToUpdate.YearsOfExperience = updatedTrainer.YearsOfExperience;
-            //trainerToUpdate.Specialty = updatedTrainer.Specialty;
-            //return trainerToUpdate;
-            return updatedTrainer;
+            using (var connection = new SqlConnection(_connectionString))
+            {
+                connection.Open();
+
+                var cmd = connection.CreateCommand();
+                cmd.CommandText = @"UPDATE [Trainer]
+                                            SET [Name] = @name
+                                          ,[YearsOfExperience] = @yearsOfExperience
+                                          ,[Specialty] = @specialty
+                                        output inserted.*
+                                        WHERE id = @id";
+
+                cmd.Parameters.AddWithValue("name", updatedTrainer.Name);
+                cmd.Parameters.AddWithValue("yearsOfExperience", updatedTrainer.YearsOfExperience);
+                cmd.Parameters.AddWithValue("specialty", updatedTrainer.Specialty);
+                cmd.Parameters.AddWithValue("id", id);
+
+                var reader = cmd.ExecuteReader();
+
+                if (reader.Read())
+                {
+                    return GetTrainerFromDataReader(reader);
+                }
+
+                return null;
+            }
         }
 
         public Trainer Add(Trainer newTrainer)
         {
+            using (var connection = new SqlConnection(_connectionString))
+            {
+                connection.Open();
+
+                var cmd = connection.CreateCommand();
+                cmd.CommandText = @"INSERT INTO [dbo].[Trainer]
+                                       ([Name]
+                                       ,[YearsOfExperience]
+                                       ,[Specialty])
+                                    output inserted.*
+                                    VALUES
+                                       (@name
+                                       ,@yearsOfExperience
+                                       ,@specialty)";
+
+                cmd.Parameters.AddWithValue("name", newTrainer.Name);
+                cmd.Parameters.AddWithValue("yearsOfExperience", newTrainer.YearsOfExperience);
+                cmd.Parameters.AddWithValue("specialty", newTrainer.Specialty);
+
+
+                var reader = cmd.ExecuteReader();
+                if (reader.Read())
+                {
+                    return GetTrainerFromDataReader(reader);
+                }
+
+                return null;
+            }
             //_trainers.Add(newTrainer);
             return newTrainer;
+        }
+
+        Trainer GetTrainerFromDataReader(SqlDataReader reader)
+        {
+            //explicit cast
+            var id = (int)reader["Id"];
+            //implicit cast
+            var returnedName = reader["name"] as string;
+            //convert to
+            var yearsOfExperience = Convert.ToInt32(reader["YearsOfExperience"]);
+            //try parse
+            Enum.TryParse<Specialty>(reader["specialty"].ToString(), out var specialty);
+
+            var trainer = new Trainer
+            {
+                Specialty = specialty,
+                Id = id,
+                Name = returnedName,
+                YearsOfExperience = yearsOfExperience
+            };
+
+            return trainer;
         }
     }
 }

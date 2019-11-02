@@ -25,7 +25,7 @@ namespace BranchAndChicken.Api.Controllers
             return repo.Get(name);
         }
 
-        [HttpGet("{id}")]
+        [HttpGet("{id:int}")]
         public ActionResult<Trainer> GetById(int id)
         {
             throw new NotImplementedException();
